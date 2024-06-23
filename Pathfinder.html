@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pathfinder 2e-style RPG Encounter</title>
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        #game-container {
+            background-color: #34495e;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+            width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            background: url('tile_0040.png') repeat;
+        }
+        #battle-screen {
+            width: 100%;
+            height: 300px;
+            position: relative;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .character {
+            position: absolute;
+            bottom: 20px;
+            width: 128px;
+            height: 128px;
+            transition: transform 0.3s;
+            background-size: contain;
+            background-repeat: no-repeat;
+        }
+        #player { left: 100px; }
+        #enemy { right: 100px; }
+        .pixel {
+            width: 6px;
+            height: 6px;
+            position: absolute;
+        }
+        #story-log, #battle-log {
+            height: 150px;
+            overflow-y: scroll;
+            background-color: #2c3e50;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #95a5a6; }
+        .status {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .status div { width: 48%; }
+        #scene-description {
+            font-style: italic;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .speech-bubble {
+            position: absolute;
+            background-color: white;
+            border-radius: 10px;
+            padding: 5px;
+            font-size: 12px;
+            color: black;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #player-speech {
+            left: 80px;
+            bottom: 120px;
+        }
+        #enemy-speech {
+            right: 80px;
+            bottom: 120px;
+        }
+        @keyframes attack {
+            0% { transform: translateX(0); }
+            50% { transform: translateX(50px); }
+            100% { transform: translateX(0); }
+        }
+        @keyframes hit {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+            100% { transform: translateX(0); }
+        }
+        @keyframes death {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(20px); opacity: 0; }
+        }
+        #start-screen {
+            text-align: center;
+        }
+        #character-select {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+        .character-option {
+            cursor: pointer;
+            padding: 10px;
+            border: 2px solid #3498db;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .character-option:hover {
+            background-color: #3498db;
+        }
+        .character-option img {
+            width: 100px;
+            height: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="start-screen">
+            <h1>Pathfinder 2e-style RPG Encounter</h1>
+            <p>Choose your character:</p>
+            <div id="character-select">
+                <div class="character-option" id="rogue-option">
+                    <h3>Rogue</h3>
+                    <p>Sneaky and agile</p>
+                    <img src="tile_0112.png" alt="Rogue">
+                </div>
+                <div class="character-option" id="wizard-option">
+                    <h3>Wizard</h3>
+                    <p>Master of arcane magic</p>
+                    <img src="tile_0084.png" alt="Wizard">
+                </div>
+                <div class="character-option" id="dwarf-option">
+                    <h3>Dwarf</h3>
+                    <p>Sturdy and strong</p>
+                    <img src="tile_0087.png" alt="Dwarf">
+                </div>
+                <div class="character-option" id="barbarian-option">
+                    <h3>Barbarian</h3>
+                    <p>Fierce and powerful</p>
+                    <img src="tile_0088.png" alt="Barbarian">
+                </div>
+            </div>
+        </div>
+        <div id="game-screen" style="display: none;">
+            <h1>Pathfinder 2e-style RPG Encounter</h1>
+            <div id="round-info"></div>
+            <div id="scene-description"></div>
+            <div id="battle-screen">
+                <div id="player" class="character"></div>
+                <div id="enemy" class="character"></div>
+                <div id="player-speech" class="speech-bubble"></div>
+                <div id="enemy-speech" class="speech-bubble"></div>
+            </div>
+            <div class="status">
+                <div id="player-status"></div>
+                <div id="enemy-status"></div>
+            </div>
+            <div id="story-log"></div>
+            <div id="battle-log"></div>
+            <div id="action-buttons"></div>
+        </div>
+    </div>
+
+    <script>
+        class Character {
+            constructor(name, hp, strength, dexterity, constitution, intelligence, wisdom, charisma, armor_class, characterClass, image) {
+                this.name = name;
+                this.maxHp = hp;
+                this.currentHp = hp;
+                this.strength = strength;
+                this.dexterity = dexterity;
+                this.constitution = constitution;
+                this.intelligence = intelligence;
+                this.wisdom = wisdom;
+                this.charisma = charisma;
+                this.armor_class = armor_class;
+                this.initiative = 0;
+                this.characterClass = characterClass;
+                this.image = image;
+                this.level = 3;
+                this.proficiencyBonus = 2;
+                this.spells = {
+                    known: [],
+                    slots: { 1: 4, 2: 2 } // Level 3 spell slots for a wizard
+                };
+            }
+
+            rollInitiative() {
+                return rollDice(20) + Math.floor((this.dexterity - 10) / 2);
+            }
+
+            attack(target) {
+                const attackRoll = rollDice(20);
+                const attackBonus = this.getAttackBonus();
+                const totalAttack = attackRoll + attackBonus;
+
+                logBattle(`${this.name} rolls to attack: ${attackRoll} + ${attackBonus} = ${totalAttack}`);
+
+                if (totalAttack >= target.armor_class) {
+                    const damage = this.getDamage();
+                    target.takeDamage(damage);
+                    return `${this.name} hits ${target.name} for ${damage} damage!`;
+                } else {
+                    return `${this.name}'s attack misses ${target.name}!`;
+                }
+            }
+
+            getAttackBonus() {
+                return this.characterClass === 'Rogue' ? Math.floor((this.dexterity - 10) / 2) + this.proficiencyBonus : Math.floor((this.strength - 10) / 2) + this.proficiencyBonus;
+            }
+
+            getDamage() {
+                if (this.characterClass === 'Rogue') {
+                    return rollDice(6) + Math.floor((this.dexterity - 10) / 2) + (Math.random() < 0.3 ? rollDice(6) : 0); // 30% chance of Sneak Attack
+                } else if (this.characterClass === 'Barbarian') {
+                    return rollDice(12) + Math.floor((this.strength - 10) / 2);
+                } else {
+                    return rollDice(8) + Math.floor((this.strength - 10) / 2);
+                }
+            }
+
+            takeDamage(amount) {
+                this.currentHp = Math.max(0, this.currentHp - amount);
+            }
+
+            heal(amount) {
+                this.currentHp = Math.min(this.maxHp, this.currentHp + amount);
+            }
+
+            getStatus() {
+                return `
+                    <h3>${this.name} (${this.characterClass})</h3>
+                    <p>HP: ${this.currentHp}/${this.maxHp}</p>
+                    <p>AC: ${this.armor_class}</p>
+                `;
+            }
+
+            castSpell(spellName, target) {
+                const spell = this.spells.known.find(s => s.name === spellName);
+                if (spell && this.spells.slots[spell.level] > 0) {
+                    this.spells.slots[spell.level]--;
+                    return spell.effect(this, target);
+                }
+                return "You can't cast that spell!";
+            }
+
+            addSpell(spell) {
+                this.spells.known.push(spell);
+            }
+        }
+
+        class Spell {
+            constructor(name, level, description, effect) {
+                this.name = name;
+                this.level = level;
+                this.description = description;
+                this.effect = effect;
+            }
+        }
+
+        const playerColors = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#4E342E', '#141414'];
+
+        let player;
+        let enemy;
+
+        const playerStatus = document.getElementById('player-status');
+        const enemyStatus = document.getElementById('enemy-status');
+        const battleLog = document.getElementById('battle-log');
+        const storyLog = document.getElementById('story-log');
+        const actionButtons = document.getElementById('action-buttons');
+        const sceneDescription = document.getElementById('scene-description');
+        const playerSpeech = document.getElementById('player-speech');
+        const enemySpeech = document.getElementById('enemy-speech');
+        const roundInfo = document.getElementById('round-info');
+        const startScreen = document.getElementById('start-screen');
+        const gameScreen = document.getElementById('game-screen');
+
+        let currentRound = 1;
+
+        function updateEnemyAppearance() {
+            const enemyElement = document.getElementById('enemy');
+            enemyElement.style.backgroundImage = `url(${enemy.image})`;
+        }
+
+        function updateStatus() {
+            playerStatus.innerHTML = player.getStatus();
+            enemyStatus.innerHTML = enemy.getStatus();
+            roundInfo.textContent = `Round: ${currentRound}`;
+        }
+
+        function logBattle(message) {
+            battleLog.innerHTML += `<p>${message}</p>`;
+            battleLog.scrollTop = battleLog.scrollHeight;
+        }
+
+        function logStory(message) {
+            storyLog.innerHTML += `<p>${message}</p>`;
+            storyLog.scrollTop = storyLog.scrollHeight;
+        }
+
+        function rollDice(sides) {
+            return Math.floor(Math.random() * sides) + 1;
+        }
+
+        function animate(element, animationName) {
+            element.style.animation = `${animationName} 0.5s`;
+            setTimeout(() => {
+                element.style.animation = '';
+            }, 500);
+        }
+
+        function showSpeechBubble(element, text, duration = 2000) {
+            element.textContent = text;
+            element.style.opacity = 1;
+            setTimeout(() => {
+                element.style.opacity = 0;
+            }, duration);
+        }
+
+        function checkBattleEnd() {
+            if (enemy.currentHp <= 0) {
+                logBattle(`You defeated the ${enemy.name}!`);
+                animate(document.getElementById('enemy'), 'death');
+                if (enemy.name === "Dark Wizard") {
+                    actionButtons.innerHTML = '<button id="open-chest-btn">Open Chest</button>';
+                    document.getElementById('open-chest-btn').addEventListener('click', openChest);
+                } else {
+                    actionButtons.innerHTML = '<button id="continue-btn">Continue Adventure</button>';
+                    document.getElementById('continue-btn').addEventListener('click', continueAdventure);
+                }
+            } else if (player.currentHp <= 0) {
+                logBattle("Game Over. Your character has been defeated.");
+                animate(document.getElementById('player'), 'death');
+                showGameOverScreen();
+            }
+        }
+
+        function attack() {
+            const playerElement = document.getElementById('player');
+            playerElement.style.backgroundImage = 'url("tile_0084.png")';
+            const attackResult = player.attack(enemy);
+            logBattle(attackResult);
+            animate(document.getElementById('player'), 'attack');
+            if (attackResult.includes('hits')) {
+                animate(document.getElementById('enemy'), 'hit');
+            }
+            showSpeechBubble(playerSpeech, "Take this!");
+
+            if (enemy.currentHp > 0) {
+                setTimeout(() => {
+                    const enemyAttackResult = enemy.attack(player);
+                    logBattle(enemyAttackResult);
+                    animate(document.getElementById('enemy'), 'attack');
+                    if (enemyAttackResult.includes('hits')) {
+                        animate(document.getElementById('player'), 'hit');
+                    }
+                    showSpeechBubble(enemySpeech, "Graaah!");
+                    currentRound++;
+                    updateStatus();
+                    checkBattleEnd();
+                    playerElement.style.backgroundImage = 'url("tile_0084.png")';
+                }, 1000);
+            } else {
+                updateStatus();
+                checkBattleEnd();
+                playerElement.style.backgroundImage = 'url("tile_0084.png")';
+            }
+        }
+
+        function useSkill() {
+            const playerElement = document.getElementById('player');
+            playerElement.style.backgroundImage = 'url("tile_0084.png")';
+            let skillResult;
+            if (player.characterClass === "Rogue") {
+                const stealthRoll = rollDice(20) + Math.floor((player.dexterity - 10) / 2) + player.proficiencyBonus;
+                skillResult = `${player.name} attempts to hide. Stealth roll: ${stealthRoll}`;
+                if (stealthRoll >= enemy.armor_class) {
+                    skillResult += ". Success! You gain advantage on your next attack.";
+                    player.hasAdvantage = true;
+                } else {
+                    skillResult += ". Failure! The enemy spots you.";
+                }
+            } else if (player.characterClass === "Wizard") {
+                const spellDC = 8 + player.proficiencyBonus + Math.floor((player.intelligence - 10) / 2);
+                const damage = rollDice(6) + rollDice(6) + Math.floor((player.intelligence - 10) / 2);
+                enemy.takeDamage(damage);
+                skillResult = `${player.name} casts Magic Missile, dealing ${damage} force damage!`;
+            }
+            logBattle(skillResult);
+            showSpeechBubble(playerSpeech, player.characterClass === "Rogue" ? "Sneaking..." : "Arcane blast!");
+
+            setTimeout(() => {
+                const enemyAttackResult = enemy.attack(player);
+                logBattle(enemyAttackResult);
+                animate(document.getElementById('enemy'), 'attack');
+                if (enemyAttackResult.includes('hits')) {
+                    animate(document.getElementById('player'), 'hit');
+                }
+                showSpeechBubble(enemySpeech, "You can't escape!");
+                currentRound++;
+                updateStatus();
+                checkBattleEnd();
+                playerElement.style.backgroundImage = 'url("tile_0084.png")';
+            }, 1000);
+        }
+
+        function setSceneDescription() {
+            const descriptions = [
+                "You find yourself in a dimly lit dungeon corridor. The air is thick with the smell of mold and decay.",
+                "As you turn a corner, you come face to face with a menacing creature. It's time to fight!",
+                "The echoes of dripping water and distant growls fill the air as you navigate through the treacherous dungeon.",
+                "Suddenly, a fearsome enemy emerges from the shadows, ready to attack!"
+            ];
+            sceneDescription.textContent = descriptions[Math.floor(Math.random() * descriptions.length)];
+        }
+
+        function startAdventure() {
+            logStory(`You are ${player.name}, a skilled ${player.characterClass} on a mission to recover the stolen Gem of Serenity from the notorious Crimson Bandits. Your quest has led you to their hideout, a treacherous dungeon beneath the abandoned fortress of Shadowmere.`);
+            logStory("As you descend into the dank corridors, the weight of your task bears heavily upon you. The gem isn't just a pretty bauble - it's said to have the power to calm even the most turbulent of minds. In the wrong hands, it could be used to manipulate entire populations.");
+            logStory("You've tracked the bandits to this location, but you know that retrieving the gem won't be easy. The dungeon is likely filled with traps, monsters, and of course, the bandits themselves.");
+            setSceneDescription();
+            showActionOptions();
+        }
+
+        function showActionOptions() {
+            actionButtons.innerHTML = `
+                <button id="sneak-btn">Sneak Past (DC 15)</button>
+                <button id="sneak-attack-btn">Sneak Attack (DC 18)</button>
+                <button id="approach-btn">Approach Openly</button>
+                <button id="inspect-btn">Inspect Surroundings</button>
+                <button id="set-trap-btn">Set Trap (DC 15)</button>
+            `;
+            document.getElementById('sneak-btn').addEventListener('click', () => attemptAction('sneak', 15));
+            document.getElementById('sneak-attack-btn').addEventListener('click', () => attemptAction('sneak attack', 18));
+            document.getElementById('approach-btn').addEventListener('click', approachOpenly);
+            document.getElementById('inspect-btn').addEventListener('click', inspectSurroundings);
+            document.getElementById('set-trap-btn').addEventListener('click', () => attemptAction('set trap', 15));
+        }
+
+        function inspectSurroundings() {
+            logStory("You carefully inspect your surroundings, looking for any clues or hidden traps.");
+            setTimeout(() => {
+                const roll = rollDice(20) + Math.floor((player.intelligence - 10) / 2);
+                if (roll >= 15) {
+                    logStory(`Success! You find a hidden trap! Roll: ${roll}`);
+                    showActionOptions();
+                } else {
+                    logStory(`Failure! You don't find anything useful. Roll: ${roll}`);
+                }
+            }, 1000);
+        }
+
+        function attemptAction(action, dc) {
+            const roll = rollDice(20);
+            const modifier = Math.floor((player.dexterity - 10) / 2);
+            const total = roll + modifier;
+            logStory(`You attempt to ${action}. You roll a ${roll} + ${modifier} = ${total} against DC ${dc}.`);
+
+            if (total >= dc) {
+                logStory(`Success! You ${action} successfully.`);
+                if (action === 'sneak attack') {
+                    startCombat(true);
+                } else {
+                    continueAdventure();
+                }
+            } else {
+                logStory(`Failure! Your attempt to ${action} fails, alerting the enemy!`);
+                startCombat(false);
+            }
+        }
+
+        function approachOpenly() {
+            logStory("You decide to approach openly, ready for combat.");
+            startCombat(false);
+        }
+
+        function startCombat(sneakAttack) {
+            currentRound = 1;
+            if (enemy.name === "Goblin") {
+                logStory("A snarling goblin leaps out from behind a crumbling pillar, its jagged blade glinting in the dim light!");
+            } else if (enemy.name === "Orc") {
+                logStory("An enormous orc emerges from the shadows, its muscular frame towering over you as it brandishes a massive war axe!");
+            } else if (enemy.name === "Giant Spider") {
+                logStory("A giant spider descends from the ceiling, its many eyes glinting with malice!");
+            } else if (enemy.name === "Rat") {
+                logStory("A large rat scurries out from the shadows, its sharp teeth bared!");
+            } else if (enemy.name === "Cyclops") {
+                logStory("A fearsome cyclops stomps into the room, its single eye glaring at you!");
+            } else if (enemy.name === "Dark Wizard") {
+                logStory("A dark wizard materializes before you, dark energy crackling around him!");
+            }
+            updateEnemyAppearance();
+
+            if (sneakAttack) {
+                logStory("Your sneak attack catches the enemy off guard!");
+                const damage = player.getDamage() + rollDice(6); // Extra d6 for sneak attack
+                enemy.takeDamage(damage);
+                logBattle(`You deal ${damage} sneak attack damage!`);
+            }
+
+            logBattle(`Initiative rolls: ${player.name}: ${player.rollInitiative()}, ${enemy.name}: ${enemy.rollInitiative()}`);
+            actionButtons.innerHTML = `
+                <button id="attack-btn">Attack</button>
+                <button id="skill-btn">Use Skill</button>
+                <button id="cast-spell-btn">Cast Spell</button>
+                <button id="heal-btn">Heal</button>
+            `;
+            document.getElementById('attack-btn').addEventListener('click', attack);
+            document.getElementById('skill-btn').addEventListener('click', useSkill);
+            document.getElementById('cast-spell-btn').addEventListener('click', castSpell);
+            document.getElementById('heal-btn').addEventListener('click', heal);
+            updateStatus();
+        }
+
+        function continueAdventure() {
+            if (enemy.name === "Goblin") {
+                enemy = new Character("Giant Spider", 40, 14, 12, 12, 10, 10, 8, 14, "Spider", 'tile_0112.png');
+                updateEnemyAppearance();
+                logStory("As you venture deeper into the dungeon, the air grows thicker and the shadows seem to dance menacingly on the walls.");
+                setSceneDescription();
+                showActionOptions();
+            } else if (enemy.name === "Giant Spider") {
+                enemy = new Character("Rat", 25, 10, 16, 10, 8, 8, 6, 12, "Rat", 'tile_0122.png');
+                updateEnemyAppearance();
+                logStory("The dungeon grows darker as you continue on your journey, the feeling of danger ever-present.");
+                setSceneDescription();
+                showActionOptions();
+            } else if (enemy.name === "Rat") {
+                enemy = new Character("Cyclops", 60, 18, 8, 16, 6, 10, 8, 15, "Cyclops", 'tile_0123.png');
+                updateEnemyAppearance();
+                logStory("You hear heavy footsteps approaching, the ground trembling slightly as a massive figure appears.");
+                setSceneDescription();
+                showActionOptions();
+            } else if (enemy.name === "Cyclops") {
+                enemy = new Character("Dark Wizard", 50, 8, 12, 10, 18, 16, 14, 13, "Wizard", 'tile_0111.png');
+                updateEnemyAppearance();
+                logStory("A chilling presence fills the air as you step into the final chamber, where a dark wizard awaits.");
+                setSceneDescription();
+                showActionOptions();
+            } else if (enemy.name === "Dark Wizard") {
+                enemy = new Character("Mimic", 60, 16, 12, 14, 10, 10, 10, 14, "Mimic", 'tile_0092.png');
+                updateEnemyAppearance();
+                logStory("The chest you thought contained the Gem of Serenity is actually a Mimic! Defeat it to claim your prize.");
+                setSceneDescription();
+                showActionOptions();
+            } else {
+                logStory("Congratulations! You've defeated the dungeon's guardians and recovered the Gem of Serenity!");
+                logStory("As you hold the softly glowing gem in your hand, you feel a wave of calm wash over you. You know that returning this artifact to its rightful place will bring peace to many.");
+                logStory("But your adventure isn't over yet. The Crimson Bandits are still out there, and who knows what other treasures and dangers await in the depths of other dungeons?");
+                showVictoryScreen();
+            }
+        }
+
+        function restartAdventure() {
+            startScreen.style.display = 'block';
+            gameScreen.style.display = 'none';
+            battleLog.innerHTML = '';
+            storyLog.innerHTML = '';
+            currentRound = 1;
+        }
+
+        function initializeCharacter(characterClass) {
+            const playerElement = document.getElementById('player');
+            if (characterClass === "Rogue") {
+                player = new Character("Aria", 45, 10, 18, 12, 14, 12, 14, 16, "Rogue", 'tile_0112.png');
+                playerElement.style.backgroundImage = 'url("tile_0112.png")';
+            } else if (characterClass === "Wizard") {
+                player = new Character("Zephyr", 40, 8, 14, 12, 18, 14, 12, 14, "Wizard", 'tile_0084.png');
+                player.addSpell(new Spell("Magic Missile", 1, "A reliable force damage spell", (caster, target) => {
+                    const damage = rollDice(4) + 1;
+                    target.takeDamage(damage);
+                    return `${caster.name} casts Magic Missile, dealing ${damage} force damage!`;
+                }));
+                player.addSpell(new Spell("Fireball", 3, "A powerful explosion of fire", (caster, target) => {
+                    const damage = rollDice(8) + rollDice(8) + rollDice(8) + Math.floor((caster.intelligence - 10) / 2);
+                    target.takeDamage(damage);
+                    return `${caster.name} casts Fireball, dealing ${damage} fire damage!`;
+                }));
+                playerElement.style.backgroundImage = 'url("tile_0084.png")';
+            } else if (characterClass === "Dwarf") {
+                player = new Character("Thrain", 50, 14, 10, 16, 12, 12, 10, 18, "Dwarf", 'tile_0087.png');
+                playerElement.style.backgroundImage = 'url("tile_0087.png")';
+            } else if (characterClass === "Barbarian") {
+                player = new Character("Brakus", 60, 18, 12, 14, 8, 10, 8, 14, "Barbarian", 'tile_0088.png');
+                playerElement.style.backgroundImage = 'url("tile_0088.png")';
+            }
+            enemy = new Character("Goblin", 30, 12, 14, 10, 8, 10, 8, 13, "Warrior", 'tile_0112.png');
+            updateEnemyAppearance();
+            updateStatus();
+            startAdventure();
+        }
+
+        function castSpell() {
+            logBattle(player.castSpell("Magic Missile", enemy));
+            const playerElement = document.getElementById('player');
+            playerElement.style.backgroundImage = 'url("tile_0084.png")';
+            setTimeout(() => {
+                playerElement.style.backgroundImage = 'url("tile_0084.png")';
+                checkBattleEnd();
+                updateStatus();
+            }, 1000);
+        }
+
+        function heal() {
+            const healAmount = rollDice(8) + 1; // Healing Potion
+            player.heal(healAmount);
+            logBattle(`${player.name} uses a healing potion and heals for ${healAmount} HP!`);
+            showSpeechBubble(playerSpeech, "Feeling better!");
+            setTimeout(() => {
+                const enemyAttackResult = enemy.attack(player);
+                logBattle(enemyAttackResult);
+                animate(document.getElementById('enemy'), 'attack');
+                if (enemyAttackResult.includes('hits')) {
+                    animate(document.getElementById('player'), 'hit');
+                }
+                showSpeechBubble(enemySpeech, "Graaah!");
+                currentRound++;
+                updateStatus();
+                checkBattleEnd();
+            }, 1000);
+        }
+
+        function openChest() {
+            enemy = new Character("Mimic", 60, 16, 12, 14, 10, 10, 10, 14, "Mimic", 'tile_0092.png');
+            updateEnemyAppearance();
+            logStory("The chest you thought contained the Gem of Serenity is actually a Mimic! Defeat it to claim your prize.");
+            setSceneDescription();
+            showActionOptions();
+        }
+
+        function showGameOverScreen() {
+            actionButtons.innerHTML = `
+                <h2>Game Over</h2>
+                <p>You reached round ${currentRound}.</p>
+                <button id="restart-btn">Restart Adventure</button>
+            `;
+            document.getElementById('restart-btn').addEventListener('click', restartAdventure);
+        }
+
+        function showVictoryScreen() {
+            actionButtons.innerHTML = `
+                <h2>Victory!</h2>
+                <p>Congratulations! You have recovered the Gem of Serenity.</p>
+                <button id="restart-btn">Start New Adventure</button>
+            `;
+            document.getElementById('restart-btn').addEventListener('click', restartAdventure);
+        }
+
+        document.getElementById('rogue-option').addEventListener('click', () => {
+            startScreen.style.display = 'none';
+            gameScreen.style.display = 'block';
+            initializeCharacter("Rogue");
+        });
+
+        document.getElementById('wizard-option').addEventListener('click', () => {
+            startScreen.style.display = 'none';
+            gameScreen.style.display = 'block';
+            initializeCharacter("Wizard");
+        });
+
+        document.getElementById('dwarf-option').addEventListener('click', () => {
+            startScreen.style.display = 'none';
+            gameScreen.style.display = 'block';
+            initializeCharacter("Dwarf");
+        });
+
+        document.getElementById('barbarian-option').addEventListener('click', () => {
+            startScreen.style.display = 'none';
+            gameScreen.style.display = 'block';
+            initializeCharacter("Barbarian");
+        });
+    </script>
+</body>
+</html>
